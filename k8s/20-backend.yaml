@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: crud-app
+  labels: { app: backend }
+spec:
+  # No `replicas` field: the HorizontalPodAutoscaler owns the replica count,
+  # so re-applying this manifest won't reset a scaled-out deployment.
+  selector:
+    matchLabels: { app: backend }
+  template:
+    metadata:
+      labels: { app: backend }
+    spec:
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: backend
+          image: crud-backend:latest
+          imagePullPolicy: IfNotPresent # image is loaded into minikube by deploy.sh
+          ports:
+            - containerPort: 5000
+          env:
+            - name: PORT
+              value: "5000"
+            - name: MONGO_URI
+              value: mongodb://mongo:27017/crud
+            - name: MAX_ITEMS # cap on stored items, keeps the DB to ~1 MB
+              value: "500"
+            - name: MONGO_POOL_SIZE # x 5 pods = at most 15 DB connections
+              value: "3"
+            # Keep the V8 heap small so the pod fits in its 50Mi limit.
+            - name: NODE_OPTIONS
+              value: --max-old-space-size=24 --max-semi-space-size=2
+          # The HPA computes utilization as a percentage of the CPU *request*,
+          # so the request must be set. A small request keeps scaling easy to
+          # trigger on a laptop. Memory and scratch disk are capped at 50Mi.
+          resources:
+            requests: { cpu: 100m, memory: 40Mi, ephemeral-storage: 5Mi }
+            limits: { cpu: 500m, memory: 50Mi, ephemeral-storage: 10Mi }
+          readinessProbe:
+            httpGet: { path: /ready, port: 5000 }
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: 5000 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          lifecycle:
+            # Give kube-proxy time to stop routing to this pod before it exits,
+            # so scale-down doesn't cause failed requests.
+            preStop:
+              exec:
+                command: ["sleep", "5"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: crud-app
+spec:
+  selector: { app: backend }
+  ports:
+    - port: 5000
+      targetPort: 5000

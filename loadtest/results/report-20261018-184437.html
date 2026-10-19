@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Autoscaling Load Test</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface: #fcfcfb;
+    --ink-1: #0b0b0b;
+    --ink-2: #52514e;
+    --ink-muted: #898781;
+    --grid: #e1e0d9;
+    --axis: #c3c2b7;
+    --border: rgba(11, 11, 11, 0.10);
+    --band: rgba(11, 11, 11, 0.035);
+    --series: #2a78d6;
+    --good: #0ca30c;
+    --good-ink: #006300;
+    --critical: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --page: #0d0d0d;
+      --surface: #1a1a19;
+      --ink-1: #f0efec;
+      --ink-2: #c3c2b7;
+      --grid: #2c2c2a;
+      --axis: #383835;
+      --border: rgba(255, 255, 255, 0.10);
+      --band: rgba(255, 255, 255, 0.04);
+      --series: #3987e5;
+      --good-ink: #0ca30c;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --ink-1: #f0efec;
+    --ink-2: #c3c2b7;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --band: rgba(255, 255, 255, 0.04);
+    --series: #3987e5;
+    --good-ink: #0ca30c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--ink-1);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 1000px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 28px 0 10px; }
+  .sub { color: var(--ink-2); margin: 0; }
+  .sub code { font-size: 12px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-top: 20px; }
+  .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .tile .label { color: var(--ink-2); font-size: 12px; }
+  .tile .value { font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .tile .note { color: var(--ink-muted); font-size: 12px; }
+  .status { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+  .status svg { flex: none; }
+  .status.pass { color: var(--good-ink); }
+  .status.fail { color: var(--critical); }
+  .charts { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px 12px; position: relative; }
+  .chart-title { display: flex; justify-content: space-between; color: var(--ink-2); font-size: 12px; margin: 12px 0 2px 44px; }
+  .chart svg { display: block; width: 100%; overflow: visible; }
+  .chart text { fill: var(--ink-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .chart .ref-label { fill: var(--ink-2); }
+  .chart .band-label { fill: var(--ink-2); font-size: 11px; }
+  .tooltip {
+    position: fixed; pointer-events: none; z-index: 10; display: none;
+    background: var(--surface); color: var(--ink-1); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; font-size: 12px; min-width: 170px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  }
+  .tooltip .tt-head { font-weight: 600; margin-bottom: 4px; }
+  .tooltip .row { display: flex; justify-content: space-between; gap: 16px; }
+  .tooltip .row span:first-child { color: var(--ink-2); }
+  .tooltip .row span:last-child { font-variant-numeric: tabular-nums; }
+  table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  th { color: var(--ink-2); font-weight: 600; font-size: 12px; }
+  th:first-child, td:first-child, th.l, td.l { text-align: left; }
+  .table-wrap { overflow-x: auto; }
+  details summary { cursor: pointer; color: var(--ink-2); margin: 24px 0 10px; }
+  .errors { color: var(--ink-2); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Autoscaling load test</h1>
+  <p class="sub" id="sub"></p>
+
+  <section class="tiles" id="tiles" aria-label="Summary"></section>
+
+  <h2>Load and scaling over time</h2>
+  <div class="charts" id="charts"></div>
+
+  <h2>Replica changes</h2>
+  <div class="table-wrap"><table id="changes"></table></div>
+  <p class="errors" id="errors"></p>
+
+  <details>
+    <summary>Every interval (table view)</summary>
+    <div class="table-wrap"><table id="intervals"></table></div>
+  </details>
+</main>
+<div class="tooltip" id="tooltip" role="status"></div>
+
+<script>
+const DATA = {"meta": {"url": "http://127.0.0.1:50291", "started": "2026-10-18 18:44", "stages": [{"duration": 20, "users": 5}, {"duration": 60, "users": 30}, {"duration": 90, "users": 60}, {"duration": 45, "users": 15}, {"duration": 30, "users": 3}], "min_replicas": 1, "max_replicas": 5, "cpu_target": 50}, "rows": [{"t": 10, "phase": "stage 1", "users": 5, "rps": 251.6, "errors": 0, "capped": 0, "p50": 4, "p95": 87, "pods": 1, "replicas": 1, "ready": 1, "desired": 1, "cpu": 3}, {"t": 20, "phase": "stage 2", "users": 30, "rps": 292.3, "errors": 0, "capped": 0, "p50": 3, "p95": 86, "pods": 1, "replicas": 1, "ready": 1, "desired": 1, "cpu": 3}, {"t": 30, "phase": "stage 2", "users": 30, "rps": 240.5, "errors": 0, "capped": 0, "p50": 106, "p95": 193, "pods": 1, "replicas": 1, "ready": 1, "desired": 1, "cpu": 3}, {"t": 40, "phase": "stage 2", "users": 30, "rps": 239.7, "errors": 0, "capped": 0, "p50": 106, "p95": 193, "pods": 1, "replicas": 1, "ready": 1, "desired": 1, "cpu": 3}, {"t": 50, "phase": "stage 2", "users": 30, "rps": 252.0, "errors": 0, "capped": 0, "p50": 104, "p95": 192, "pods": 1, "replicas": 1, "ready": 1, "desired": 1, "cpu": 3}, {"t": 60, "phase": "stage 2", "users": 30, "rps": 243.5, "errors": 0, "capped": 0, "p50": 106, "p95": 193, "pods": 1, "replicas": 3, "ready": 1, "desired": 3, "cpu": 326}, {"t": 70, "phase": "stage 2", "users": 30, "rps": 507.5, "errors": 0, "capped": 0, "p50": 45, "p95": 186, "pods": 3, "replicas": 3, "ready": 3, "desired": 3, "cpu": 326}, {"t": 80, "phase": "stage 3", "users": 60, "rps": 611.6, "errors": 0, "capped": 0, "p50": 10, "p95": 178, "pods": 4, "replicas": 5, "ready": 5, "desired": 5, "cpu": 326}, {"t": 90, "phase": "stage 3", "users": 60, "rps": 516.4, "errors": 0, "capped": 0, "p50": 103, "p95": 204, "pods": 5, "replicas": 5, "ready": 5, "desired": 5, "cpu": 326}, {"t": 100, "phase": "stage 3", "users": 60, "rps": 528.0, "errors": 0, "capped": 60, "p50": 99, "p95": 301, "pods": 5, "replicas": 5, "ready": 5, "desired": 5, "cpu": 326}, {"t": 110, "phase": "stage 3", "users": 60, "rps": 514.7, "errors": 0, "capped": 119, "p50": 100, "p95": 294, "pods": 5, "replicas": 5, "ready": 5, "desired": 5, "cpu": 326}, {"t": 120, "phase": "stage 3", "users": 60, "rps": 493.7, "errors": 0, "capped": 22, "p50": 103, "p95": 209, "pods": 5, "replicas": 5, "ready": 5, "desired": 5, "cpu": 430}, {"t": 130, "phase": "stage 3", "users": 60, "rps": 505.6, "errors": 0, "capped": 57, "p50": 103, "p95": 206, "pods": 5, "replicas": 5, "ready": 5, "desired": 5, "cpu": 430}, {"t": 140, "phase": "stage 3", "users": 60, "rps": 493.6, "errors": 0, "capped": 61, "p50": 103, "p95": 212, "pods": 5, "replicas": 5, "ready": 5, "desired": 5, "cpu": 430}, {"t": 150, "phase": "stage 3", "users": 60, "rps": 475.2, "errors": 0, "capped": 47, "p50": 102, "p95": 297, "pods": 5, "replicas": 5, "ready": 5, "desired": 5, "cpu": 430}, {"t": 160, "phase": "stage 3", "users": 60, "rps": 445.3, "errors": 0, "capped": 41, "p50": 106, "p95": 296, "pods": 5, "replicas": 5, "ready": 5, "desired": 5, "cpu": 430}, {"t": 170, "phase": "stage 4", "users": 15, "rps": 477.8, "errors": 0, "capped": 69, "p50": 104, "p95": 285, "pods": 5, "replicas": 5, "ready": 5, "desired": 5, "cpu": 430}, {"t": 180, "phase": "stage 4", "users": 15, "rps": 612.2, "errors": 0, "capped": 0, "p50": 7, "p95": 89, "pods": 5, "replicas": 5, "ready": 5, "desired": 5, "cpu": 289}, {"t": 190, "phase": "stage 4", "users": 15, "rps": 600.3, "errors": 0, "capped": 7, "p50": 9, "p95": 85, "pods": 5, "replicas": 5, "ready": 5, "desired": 5, "cpu": 289}, {"t": 200, "phase": "stage 4", "users": 15, "rps": 603.2, "errors": 0, "capped": 69, "p50": 8, "p95": 86, "pods": 5, "replicas": 5, "ready": 5, "desired": 5, "cpu": 289}, {"t": 210, "phase": "stage 4", "users": 15, "rps": 600.8, "errors": 0, "capped": 128, "p50": 7, "p95": 87, "pods": 5, "replicas": 5, "ready": 5, "desired": 5, "cpu": 289}, {"t": 220, "phase": "stage 5", "users": 3, "rps": 717.3, "errors": 0, "capped": 15, "p50": 3, "p95": 83, "pods": 5, "replicas": 5, "ready": 5, "desired": 5, "cpu": 289}, {"t": 230, "phase": "stage 5", "users": 3, "rps": 794.9, "errors": 0, "capped": 92, "p50": 2, "p95": 5, "pods": 5, "replicas": 5, "ready": 5, "desired": 5, "cpu": 289}, {"t": 240, "phase": "stage 5", "users": 3, "rps": 822.3, "errors": 0, "capped": 18, "p50": 2, "p95": 5, "pods": 5, "replicas": 5, "ready": 5, "desired": 5, "cpu": 278}, {"t": 250, "phase": "cooldown", "users": 0, "rps": 386.1, "errors": 0, "capped": 0, "p50": 2, "p95": 4, "pods": 5, "replicas": 5, "ready": 5, "desired": 5, "cpu": 278}, {"t": 260, "phase": "cooldown", "users": 0, "rps": 0.0, "errors": 0, "capped": 0, "p50": 0, "p95": 0, "pods": 0, "replicas": 5, "ready": 5, "desired": 5, "cpu": 278}, {"t": 270, "phase": "cooldown", "users": 0, "rps": 0.0, "errors": 0, "capped": 0, "p50": 0, "p95": 0, "pods": 0, "replicas": 5, "ready": 5, "desired": 5, "cpu": 278}, {"t": 280, "phase": "cooldown", "users": 0, "rps": 0.0, "errors": 0, "capped": 0, "p50": 0, "p95": 0, "pods": 0, "replicas": 5, "ready": 5, "desired": 5, "cpu": 278}, {"t": 290, "phase": "cooldown", "users": 0, "rps": 0.0, "errors": 0, "capped": 0, "p50": 0, "p95": 0, "pods": 0, "replicas": 5, "ready": 5, "desired": 5, "cpu": 278}, {"t": 300, "phase": "cooldown", "users": 0, "rps": 0.0, "errors": 0, "capped": 0, "p50": 0, "p95": 0, "pods": 0, "replicas": 5, "ready": 5, "desired": 5, "cpu": 112}, {"t": 310, "phase": "cooldown", "users": 0, "rps": 0.0, "errors": 0, "capped": 0, "p50": 0, "p95": 0, "pods": 0, "replicas": 5, "ready": 5, "desired": 5, "cpu": 112}, {"t": 320, "phase": "cooldown", "users": 0, "rps": 0.0, "errors": 0, "capped": 0, "p50": 0, "p95": 0, "pods": 0, "replicas": 5, "ready": 5, "desired": 5, "cpu": 112}, {"t": 330, "phase": "cooldown", "users": 0, "rps": 0.0, "errors": 0, "capped": 0, "p50": 0, "p95": 0, "pods": 0, "replicas": 5, "ready": 5, "desired": 5, "cpu": 112}, {"t": 340, "phase": "cooldown", "users": 0, "rps": 0.0, "errors": 0, "capped": 0, "p50": 0, "p95": 0, "pods": 0, "replicas": 5, "ready": 5, "desired": 5, "cpu": 112}, {"t": 350, "phase": "cooldown", "users": 0, "rps": 0.0, "errors": 0, "capped": 0, "p50": 0, "p95": 0, "pods": 0, "replicas": 5, "ready": 5, "desired": 5, "cpu": 112}, {"t": 360, "phase": "cooldown", "users": 0, "rps": 0.0, "errors": 0, "capped": 0, "p50": 0, "p95": 0, "pods": 0, "replicas": 5, "ready": 5, "desired": 5, "cpu": 3}, {"t": 370, "phase": "cooldown", "users": 0, "rps": 0.0, "errors": 0, "capped": 0, "p50": 0, "p95": 0, "pods": 0, "replicas": 5, "ready": 5, "desired": 5, "cpu": 3}, {"t": 380, "phase": "cooldown", "users": 0, "rps": 0.0, "errors": 0, "capped": 0, "p50": 0, "p95": 0, "pods": 0, "replicas": 5, "ready": 5, "desired": 5, "cpu": 3}, {"t": 390, "phase": "cooldown", "users": 0, "rps": 0.0, "errors": 0, "capped": 0, "p50": 0, "p95": 0, "pods": 0, "replicas": 5, "ready": 5, "desired": 5, "cpu": 3}, {"t": 400, "phase": "cooldown", "users": 0, "rps": 0.0, "errors": 0, "capped": 0, "p50": 0, "p95": 0, "pods": 0, "replicas": 5, "ready": 5, "desired": 5, "cpu": 3}, {"t": 410, "phase": "cooldown", "users": 0, "rps": 0.0, "errors": 0, "capped": 0, "p50": 0, "p95": 0, "pods": 0, "replicas": 2, "ready": 2, "desired": 2, "cpu": 3}, {"t": 420, "phase": "cooldown", "users": 0, "rps": 0.0, "errors": 0, "capped": 0, "p50": 0, "p95": 0, "pods": 0, "replicas": 1, "ready": 1, "desired": 1, "cpu": 3}], "changes": [{"t": 60, "from": 1, "to": 3, "phase": "stage 2", "users": 30, "rps": 243.5, "cpu": 326}, {"t": 80, "from": 3, "to": 5, "phase": "stage 3", "users": 60, "rps": 611.6, "cpu": 326}, {"t": 410, "from": 5, "to": 2, "phase": "cooldown", "users": 0, "rps": 0.0, "cpu": 3}, {"t": 420, "from": 2, "to": 1, "phase": "cooldown", "users": 0, "rps": 0.0, "cpu": 3}], "summary": {"requests": 122960, "errors": 0, "capped": 805, "error_rate": 0.0, "error_types": {}, "avg_rps": 291.61173482036133, "initial": 1, "peak": 5, "final": 1, "scaled_up": true, "scaled_down": true}};
+
+const $ = (id) => document.getElementById(id);
+const fmtInt = (v) => (v == null ? '–' : Math.round(v).toLocaleString());
+const fmt1 = (v) => (v == null ? '–' : v.toFixed(1));
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+const CHECK = '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="8" fill="currentColor"/><path d="M4.5 8.2l2.3 2.3 4.7-4.9" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const CROSS = '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="8" fill="currentColor"/><path d="M5.2 5.2l5.6 5.6M10.8 5.2l-5.6 5.6" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>';
+
+function status(ok, text) {
+  return `<span class="status ${ok ? 'pass' : 'fail'}">${ok ? CHECK : CROSS}${ok ? 'Pass' : 'Fail'}</span> <span class="note">${esc(text)}</span>`;
+}
+
+// ---------------------------------------------------------------- header
+const { meta, rows, summary, changes } = DATA;
+$('sub').innerHTML = `${esc(meta.started)} · target <code>${esc(meta.url)}</code> · ` +
+  `${meta.stages.map((s) => `${s.users} users × ${s.duration}s`).join(' → ')} → idle cooldown`;
+
+const tiles = [
+  { label: 'Requests', value: fmtInt(summary.requests), note: `${fmt1(summary.avg_rps)} req/s average` },
+  { label: 'Error rate', value: `${summary.error_rate.toFixed(2)}%`, note: `${fmtInt(summary.errors)} failed · ${fmtInt(summary.capped)} hit item cap` },
+  { label: 'Backend replicas', value: `${summary.initial ?? '–'} → ${summary.peak ?? '–'} → ${summary.final ?? '–'}`, note: `start → peak → end (limit ${meta.min_replicas ?? '?'}–${meta.max_replicas ?? '?'})` },
+  { label: 'Scaled up under load', html: status(summary.scaled_up, summary.scaled_up ? `${summary.initial} → ${summary.peak} pods` : 'no scale-up seen') },
+  { label: 'Scaled down after load', html: status(summary.scaled_down, summary.scaled_down ? `${summary.peak} → ${summary.final} pods` : 'stayed scaled out') },
+];
+$('tiles').innerHTML = tiles.map((t) => `<div class="tile"><div class="label">${t.label}</div>` +
+  (t.html ? `<div class="value" style="font-size:16px;margin-top:6px">${t.html}</div>` :
+    `<div class="value">${t.value}</div><div class="note">${t.note}</div>`) + '</div>').join('');
+
+// ---------------------------------------------------------------- charts
+// One chart per measure, all on the same time axis (never two y-scales).
+const CHARTS = [
+  { key: 'users', title: 'Concurrent users (load applied)', step: true, fmt: fmtInt },
+  { key: 'rps', title: 'Throughput (req/s)', fmt: fmtInt },
+  { key: 'replicas', title: 'Backend replicas', step: true, fmt: fmtInt, integer: true,
+    refs: [{ v: meta.max_replicas, label: `max ${meta.max_replicas}` }] },
+  { key: 'cpu', title: 'Average backend CPU (% of request)', fmt: (v) => (v == null ? '–' : `${v}%`),
+    refs: [{ v: meta.cpu_target, label: `scale-up target ${meta.cpu_target}%` }] },
+  { key: 'p95', title: 'p95 latency (ms)', fmt: fmtInt },
+];
+
+const tMax = Math.max(...rows.map((r) => r.t), 1);
+const stageBands = [];
+{
+  let start = 0;
+  meta.stages.forEach((s, i) => { stageBands.push({ start, end: start + s.duration, label: `S${i + 1}`, users: s.users }); start += s.duration; });
+  stageBands.push({ start, end: tMax, label: 'cooldown', users: 0 });
+}
+
+function niceMax(v, integer) {
+  if (!(v > 0)) return 1;
+  if (integer) return Math.max(1, Math.ceil(v * 1.15));
+  const p = Math.pow(10, Math.floor(Math.log10(v)));
+  for (const m of [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (m * p >= v * 1.05) return m * p;
+  return 10 * p;
+}
+
+const M = { l: 44, r: 12, t: 16, b: 22 };
+const H = 130;
+let chartEls = [];
+
+function render() {
+  const host = $('charts');
+  host.innerHTML = '';
+  chartEls = [];
+  const W = Math.max(280, host.clientWidth - 24);
+  const iw = W - M.l - M.r, ih = H - M.t - M.b;
+  const x = (t) => M.l + (t / tMax) * iw;
+
+  CHARTS.forEach((c, ci) => {
+    const vals = rows.map((r) => r[c.key]).filter((v) => v != null);
+    const refMax = Math.max(0, ...(c.refs || []).map((r) => r.v || 0));
+    const yMax = niceMax(Math.max(refMax, ...vals, 0), c.integer);
+    const y = (v) => M.t + ih - (v / yMax) * ih;
+
+    const title = document.createElement('div');
+    title.className = 'chart-title';
+    title.innerHTML = `<span>${c.title}</span>`;
+    host.appendChild(title);
+
+    let svg = `<svg viewBox="0 0 ${W} ${H}" height="${H}" role="img" aria-label="${esc(c.title)} over time">`;
+    // stage bands (alternate shading) + labels on the first chart
+    stageBands.forEach((b, i) => {
+      if (i % 2 === 0) svg += `<rect x="${x(b.start)}" y="${M.t}" width="${Math.max(0, x(Math.min(b.end, tMax)) - x(b.start))}" height="${ih}" fill="var(--band)"/>`;
+      if (ci === 0 && b.end > b.start) svg += `<text class="band-label" x="${(x(b.start) + x(Math.min(b.end, tMax))) / 2}" y="${M.t - 4}" text-anchor="middle">${b.label}</text>`;
+    });
+    // gridlines + y labels
+    const ticks = c.integer && yMax <= 6 ? Array.from({ length: yMax + 1 }, (_, i) => i) : [0, yMax / 2, yMax];
+    ticks.forEach((tv) => {
+      svg += `<line x1="${M.l}" x2="${W - M.r}" y1="${y(tv)}" y2="${y(tv)}" stroke="${tv === 0 ? 'var(--axis)' : 'var(--grid)'}" stroke-width="1"/>`;
+      svg += `<text x="${M.l - 6}" y="${y(tv) + 4}" text-anchor="end">${fmtInt(tv)}</text>`;
+    });
+    // x labels
+    const step = tMax > 600 ? 120 : tMax > 300 ? 60 : 30;
+    for (let t = 0; t <= tMax; t += step) svg += `<text x="${x(t)}" y="${H - 6}" text-anchor="middle">${t}s</text>`;
+    // reference lines
+    (c.refs || []).forEach((r) => {
+      if (r.v == null) return;
+      svg += `<line x1="${M.l}" x2="${W - M.r}" y1="${y(r.v)}" y2="${y(r.v)}" stroke="var(--ink-2)" stroke-dasharray="4 4" stroke-width="1"/>`;
+      svg += `<text class="ref-label" x="${W - M.r}" y="${y(r.v) - 4}" text-anchor="end">${esc(r.label)}</text>`;
+    });
+    // series path (gaps where a value is missing)
+    let d = '', prev = null;
+    rows.forEach((r) => {
+      const v = r[c.key];
+      if (v == null) { prev = null; return; }
+      if (prev == null) d += `M${x(r.t)},${y(v)}`;
+      else if (c.step) d += `H${x(r.t)}V${y(v)}`;
+      else d += `L${x(r.t)},${y(v)}`;
+      prev = v;
+    });
+    svg += `<path d="${d}" fill="none" stroke="var(--series)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    svg += `<line class="xh" x1="0" x2="0" y1="${M.t}" y2="${M.t + ih}" stroke="var(--ink-2)" stroke-width="1" visibility="hidden"/>`;
+    svg += `<circle class="dot" r="4.5" fill="var(--series)" stroke="var(--surface)" stroke-width="2" visibility="hidden"/>`;
+    svg += `<rect class="hit" x="${M.l}" y="0" width="${iw}" height="${H}" fill="transparent"/>`;
+    svg += '</svg>';
+
+    const wrap = document.createElement('div');
+    wrap.className = 'chart';
+    wrap.innerHTML = svg;
+    host.appendChild(wrap);
+    chartEls.push({ c, svg: wrap.querySelector('svg'), x, y });
+  });
+
+  chartEls.forEach(({ svg }) => {
+    const hit = svg.querySelector('.hit');
+    hit.addEventListener('pointermove', (e) => onMove(e, svg));
+    hit.addEventListener('pointerleave', hideHover);
+  });
+}
+
+function onMove(e, svg) {
+  const box = svg.getBoundingClientRect();
+  const W = svg.viewBox.baseVal.width;
+  const px = ((e.clientX - box.left) / box.width) * W;
+  const iw = W - M.l - M.r;
+  const t = ((px - M.l) / iw) * tMax;
+  let best = rows[0];
+  for (const r of rows) if (Math.abs(r.t - t) < Math.abs(best.t - t)) best = r;
+
+  chartEls.forEach(({ c, svg: s, x, y }) => {
+    const xh = s.querySelector('.xh'), dot = s.querySelector('.dot');
+    xh.setAttribute('x1', x(best.t)); xh.setAttribute('x2', x(best.t)); xh.setAttribute('visibility', 'visible');
+    const v = best[c.key];
+    if (v == null) dot.setAttribute('visibility', 'hidden');
+    else { dot.setAttribute('cx', x(best.t)); dot.setAttribute('cy', y(v)); dot.setAttribute('visibility', 'visible'); }
+  });
+
+  const tt = $('tooltip');
+  tt.innerHTML = `<div class="tt-head">${best.t}s · ${esc(best.phase)}</div>` +
+    [['Users', fmtInt(best.users)], ['Throughput', `${fmtInt(best.rps)} req/s`], ['Errors', fmtInt(best.errors)],
+     ['p95 latency', `${fmtInt(best.p95)} ms`], ['Pods answering', fmtInt(best.pods)],
+     ['Replicas (ready/total)', best.replicas == null ? '–' : `${best.ready}/${best.replicas}`],
+     ['HPA desired', fmtInt(best.desired)], ['CPU', best.cpu == null ? '–' : `${best.cpu}%`]]
+      .map(([k, v]) => `<div class="row"><span>${k}</span><span>${v}</span></div>`).join('');
+  tt.style.display = 'block';
+  const tw = tt.offsetWidth, th = tt.offsetHeight;
+  let left = e.clientX + 14, top = e.clientY + 14;
+  if (left + tw > window.innerWidth - 8) left = e.clientX - tw - 14;
+  if (top + th > window.innerHeight - 8) top = e.clientY - th - 14;
+  tt.style.left = `${Math.max(8, left)}px`;
+  tt.style.top = `${Math.max(8, top)}px`;
+}
+
+function hideHover() {
+  $('tooltip').style.display = 'none';
+  chartEls.forEach(({ svg }) => {
+    svg.querySelector('.xh').setAttribute('visibility', 'hidden');
+    svg.querySelector('.dot').setAttribute('visibility', 'hidden');
+  });
+}
+
+render();
+let rt;
+window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(render, 100); });
+
+// ---------------------------------------------------------------- tables
+$('changes').innerHTML = '<tr><th>Time</th><th class="l">Change</th><th class="l">Phase</th><th>Users</th><th>req/s</th><th>CPU</th></tr>' +
+  (changes.length ? changes.map((c) => `<tr><td>${c.t}s</td><td class="l">${c.from} → ${c.to} (${c.to > c.from ? 'scaled up' : 'scaled down'})</td>` +
+    `<td class="l">${esc(c.phase)}</td><td>${fmtInt(c.users)}</td><td>${fmtInt(c.rps)}</td><td>${c.cpu == null ? '–' : c.cpu + '%'}</td></tr>`).join('')
+    : '<tr><td colspan="6" class="l">No replica changes recorded.</td></tr>');
+
+const errs = Object.entries(summary.error_types || {});
+$('errors').textContent = errs.length ? 'Errors by type: ' + errs.map(([k, v]) => `${k} × ${v}`).join(', ') : 'No request errors.';
+
+$('intervals').innerHTML = '<tr><th>Time</th><th class="l">Phase</th><th>Users</th><th>req/s</th><th>Errors</th><th>Capped</th><th>p50 ms</th><th>p95 ms</th><th>Pods hit</th><th>Replicas</th><th>Desired</th><th>CPU</th></tr>' +
+  rows.map((r) => `<tr><td>${r.t}s</td><td class="l">${esc(r.phase)}</td><td>${fmtInt(r.users)}</td><td>${fmt1(r.rps)}</td><td>${fmtInt(r.errors)}</td>` +
+    `<td>${fmtInt(r.capped)}</td><td>${fmtInt(r.p50)}</td><td>${fmtInt(r.p95)}</td><td>${fmtInt(r.pods)}</td>` +
+    `<td>${r.replicas == null ? '–' : `${r.ready}/${r.replicas}`}</td><td>${fmtInt(r.desired)}</td><td>${r.cpu == null ? '–' : r.cpu + '%'}</td></tr>`).join('');
+</script>
+</body>
+</html>

@@ -1,0 +1,46 @@
+# Plain Docker setup for local development (no autoscaling).
+# For autoscaling, deploy to Kubernetes with ./scripts/deploy.sh.
+services:
+  mongo:
+    image: mongo:7
+    # Same small-footprint settings as k8s/10-mongo.yaml.
+    command:
+      - --wiredTigerEngineConfigString=cache_size=16M,log=(file_max=2MB,prealloc=false)
+      - --setParameter=diagnosticDataCollectionEnabled=false
+      - --setParameter=tcmallocMaxTotalThreadCacheBytes=4194304
+      - --setParameter=tcmallocAggressiveMemoryDecommit=1
+      - --maxConns=100
+      - --quiet
+    mem_limit: 128m # mongod can't start under ~80m and needs headroom under load
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      # TCP check: mongosh would need more memory than mongod itself.
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/27017"]
+      interval: 10s
+      retries: 10
+
+  backend:
+    build: ./backend
+    image: crud-backend:latest
+    environment:
+      MONGO_URI: mongodb://mongo:27017/crud
+      MAX_ITEMS: "500"
+      MONGO_POOL_SIZE: "3"
+      NODE_OPTIONS: --max-old-space-size=24 --max-semi-space-size=2
+    mem_limit: 50m
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    image: crud-frontend:latest
+    ports:
+      - "8080:80"
+    mem_limit: 32m
+    depends_on:
+      - backend
+
+volumes:
+  mongo-data:

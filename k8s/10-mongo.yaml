@@ -1,0 +1,77 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongo-data
+  namespace: crud-app
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 50Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongo
+  namespace: crud-app
+  labels: { app: mongo }
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # a single RWO volume can't be mounted by two pods at once
+  selector:
+    matchLabels: { app: mongo }
+  template:
+    metadata:
+      labels: { app: mongo }
+    spec:
+      containers:
+        - name: mongo
+          image: mongo:7
+          # Tuned for a tiny footprint (a few MB on disk instead of ~300 MB):
+          #  - 16 MB WiredTiger cache instead of 50% of RAM (min 256 MB via the
+          #    normal flag, so it is set through the engine config string)
+          #  - 2 MB journal files, not preallocated (default: 100 MB each)
+          #  - no diagnostic.data (FTDC keeps up to 200 MB of metrics)
+          #  - 4 MB allocator thread cache, freed memory returned to the OS at once,
+          #    and at most 100 connections, so memory doesn't climb as the
+          #    backend scales out and opens more connections
+          args:
+            - --wiredTigerEngineConfigString=cache_size=16M,log=(file_max=2MB,prealloc=false)
+            - --setParameter=diagnosticDataCollectionEnabled=false
+            - --setParameter=tcmallocMaxTotalThreadCacheBytes=4194304
+            - --setParameter=tcmallocAggressiveMemoryDecommit=1
+            - --maxConns=100
+            - --quiet
+          ports:
+            - containerPort: 27017
+          # mongod can't start under ~80Mi (it is OOM-killed while opening
+          # WiredTiger), idles at ~70Mi, and was OOM-killed at 96Mi under peak
+          # load with 5 backend pods connected, so 128Mi is the practical floor.
+          resources:
+            requests: { cpu: 250m, memory: 128Mi, ephemeral-storage: 10Mi }
+            limits: { memory: 128Mi, ephemeral-storage: 20Mi }
+          # TCP check instead of `mongosh ping`: mongosh is a Node.js process
+          # that would use more memory than mongod itself.
+          readinessProbe:
+            tcpSocket: { port: 27017 }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          volumeMounts:
+            - name: data
+              mountPath: /data/db
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: mongo-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo
+  namespace: crud-app
+spec:
+  selector: { app: mongo }
+  ports:
+    - port: 27017
+      targetPort: 27017
