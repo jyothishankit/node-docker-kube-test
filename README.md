@@ -33,6 +33,12 @@ Node.js + MongoDB + React, containerised with Docker, autoscaled by Kubernetes, 
 - **Staged Python load test.** It ramps up, peaks, ramps down, watches the replica count with `kubectl`, prints a pass/fail verdict and writes an **interactive HTML report**.
 - **Tiny footprint.** App images are 28 MB and 6 MB, backend pods run under 50Mi, and the database uses about 2 MB on disk with a capped item count.
 
+## 📚 Field guide
+
+[`docs/guide.html`](docs/guide.html) walks through every Dockerfile and Kubernetes config line by line. It covers multi-stage builds, layer caching, requests and limits, probes, graceful scale-down and the HPA formula, and works through the test run's scaling decisions step by step. It also includes an interactive HPA calculator.
+
+**[Read it rendered →](https://htmlpreview.github.io/?https://github.com/jyothishankit/node-docker-kube-test/blob/main/docs/guide.html)** (GitHub shows `.html` files as source.)
+
 ## 📊 Test results
 
 The latest run on minikube used the default load profile.
@@ -200,7 +206,9 @@ Every component has small, explicit limits. All numbers below were measured on m
 ├── scripts/
 │   ├── deploy.sh            minikube → build → apply → wait
 │   └── teardown.sh
-├── docs/images/             screenshots used in this README
+├── docs/
+│   ├── guide.html           line-by-line guide to the Docker and Kubernetes configs
+│   └── images/              screenshots used in this README
 └── docker-compose.yml       plain-Docker dev setup (no autoscaling)
 ```
 

@@ -1,0 +1,1143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>node-docker-kube Field Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+  /* Layout: sticky contents rail on the left, a ~70ch reading column on the right; code blocks are the "exhibits". */
+  :root {
+    --bg: #f4f6f8;
+    --surface: #ffffff;
+    --ink: #162031;
+    --ink-2: #4a556b;
+    --muted: #7a8599;
+    --line: #dde2ea;
+    --accent: #0c7a83;
+    --accent-ink: #075e65;
+    --accent-soft: #e2f3f3;
+    --warn: #a6540a;
+    --warn-soft: #fbefe2;
+    --bad: #b42d2d;
+    --good: #1f7a3c;
+    --code-bg: #111a27;
+    --code-fg: #d9e2ee;
+    --code-dim: #6f7f96;
+    --code-key: #7fd4d9;
+    --code-str: #f3c98b;
+    --code-hl: rgba(127, 212, 217, 0.12);
+    --font-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+    --font-body: "IBM Plex Sans", "Helvetica Neue", "Segoe UI", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #0d1219;
+      --surface: #141b25;
+      --ink: #e5eaf1;
+      --ink-2: #a5afc1;
+      --muted: #7c879b;
+      --line: #252f3e;
+      --accent: #4cc3cb;
+      --accent-ink: #7fd4d9;
+      --accent-soft: #14303a;
+      --warn: #f0a35a;
+      --warn-soft: #2e2014;
+      --bad: #f07a7a;
+      --good: #5fcf86;
+      --code-bg: #0a0f16;
+      --code-fg: #d9e2ee;
+      --code-dim: #66758b;
+      --code-key: #7fd4d9;
+      --code-str: #f3c98b;
+      --code-hl: rgba(127, 212, 217, 0.10);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0d1219;
+    --surface: #141b25;
+    --ink: #e5eaf1;
+    --ink-2: #a5afc1;
+    --muted: #7c879b;
+    --line: #252f3e;
+    --accent: #4cc3cb;
+    --accent-ink: #7fd4d9;
+    --accent-soft: #14303a;
+    --warn: #f0a35a;
+    --warn-soft: #2e2014;
+    --bad: #f07a7a;
+    --good: #5fcf86;
+    --code-bg: #0a0f16;
+    --code-fg: #d9e2ee;
+    --code-dim: #66758b;
+    --code-key: #7fd4d9;
+    --code-str: #f3c98b;
+    --code-hl: rgba(127, 212, 217, 0.10);
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.65 var(--font-body);
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  a { color: var(--accent-ink); text-underline-offset: 3px; }
+  a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px;
+  }
+  code, kbd { font-family: var(--font-mono); font-size: 0.86em; }
+  :not(pre) > code {
+    background: var(--accent-soft); color: var(--accent-ink);
+    padding: 0.1em 0.38em; border-radius: 5px; overflow-wrap: anywhere;
+  }
+
+  .shell {
+    max-width: 1180px; margin: 0 auto;
+    display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 56px;
+    padding-block: 40px 80px;
+  }
+  @media (max-width: 900px) { .shell { grid-template-columns: minmax(0, 1fr); gap: 0; } }
+
+  /* ---------- contents rail ---------- */
+  .rail { position: sticky; top: calc(24px + env(safe-area-inset-top, 0px)); align-self: start; font-size: 14px; }
+  @media (max-width: 900px) { .rail { display: none; } }
+  .rail .label { font: 600 11px/1 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin: 0 0 12px; }
+  .rail ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+  .rail li.group { margin-top: 14px; font: 600 12px/1.4 var(--font-mono); color: var(--ink-2); letter-spacing: 0.04em; }
+  .rail a { display: block; padding: 4px 10px; border-left: 2px solid var(--line); color: var(--ink-2); text-decoration: none; }
+  .rail a:hover { color: var(--ink); border-left-color: var(--muted); }
+  .rail a.active { color: var(--accent-ink); border-left-color: var(--accent); font-weight: 500; }
+
+  /* ---------- article ---------- */
+  article { min-width: 0; max-width: 780px; }
+  .prose > * + * { margin-top: 1em; }
+  .prose p, .prose li { max-width: 68ch; }
+  h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; letter-spacing: -0.015em; line-height: 1.15; }
+  h1 { font-size: clamp(2.2rem, 5vw, 3.4rem); font-weight: 800; margin: 0; }
+  h2 { font-size: clamp(1.55rem, 3vw, 2rem); font-weight: 800; margin: 0; }
+  h3 { font-size: 1.2rem; font-weight: 600; margin: 0; }
+  section { padding-top: 64px; scroll-margin-top: 16px; }
+  section > h2 + p, section > h3 + p { margin-top: 0.7em; }
+  .sub { scroll-margin-top: 16px; padding-top: 36px; }
+  .eyebrow { font: 600 12px/1 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent-ink); margin: 0 0 12px; }
+  .part {
+    margin-top: 88px; padding-top: 28px; border-top: 1px solid var(--line);
+    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  }
+  .part .num { font: 800 14px/1 var(--font-mono); color: var(--accent-ink); }
+  .part h2 { font-size: clamp(1.9rem, 4vw, 2.6rem); }
+
+  /* ---------- hero ---------- */
+  .hero { padding-top: 8px; }
+  .hero .lede { font-size: 1.15rem; color: var(--ink-2); max-width: 60ch; margin: 18px 0 0; }
+  .hero-meta { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 22px; font: 13px/1.4 var(--font-mono); color: var(--muted); }
+  .hero-meta span strong { color: var(--ink); font-weight: 600; }
+  .files { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-top: 28px; }
+  .file {
+    display: grid; gap: 2px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--surface); text-decoration: none; color: var(--ink);
+  }
+  .file:hover { border-color: var(--accent); }
+  .file code { background: none; padding: 0; color: var(--accent-ink); font-weight: 600; }
+  .file span { font-size: 13px; color: var(--ink-2); }
+
+  /* ---------- code exhibits ---------- */
+  .exhibit { margin-top: 18px; border-radius: var(--radius); overflow: hidden; background: var(--code-bg); }
+  .exhibit-head {
+    display: flex; justify-content: space-between; gap: 12px; align-items: center;
+    padding: 9px 14px; font: 12px/1.3 var(--font-mono); color: var(--code-dim);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  }
+  .exhibit-head b { color: var(--code-fg); font-weight: 600; }
+  .copy {
+    font: 600 11px/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase;
+    background: transparent; color: var(--code-dim); border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 6px; padding: 6px 9px; cursor: pointer;
+  }
+  .copy:hover { color: var(--code-fg); border-color: rgba(255, 255, 255, 0.3); }
+  pre { margin: 0; overflow-x: auto; }
+  pre code { display: block; padding: 12px 0; font-size: 13.5px; line-height: 1.6; color: var(--code-fg); min-width: max-content; }
+  pre code .ln { display: block; padding: 0 18px 0 0; }
+  pre code .ln::before {
+    content: attr(data-n); display: inline-block; width: 3.2em; padding-right: 1.1em; text-align: right;
+    color: var(--code-dim); user-select: none;
+  }
+  pre code .ln.hl { background: var(--code-hl); box-shadow: inset 3px 0 0 var(--code-key); }
+  pre.plain code { padding: 14px 18px; }
+  .t-c { color: var(--code-dim); font-style: italic; }
+  .t-k { color: var(--code-key); font-weight: 600; }
+  .t-s { color: var(--code-str); }
+
+  /* ---------- annotated line notes ---------- */
+  .notes { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 10px; }
+  .notes li { display: grid; grid-template-columns: 4.4em minmax(0, 1fr); gap: 12px; align-items: baseline; max-width: none; }
+  .notes .at {
+    font: 600 12px/1.6 var(--font-mono); color: var(--accent-ink); background: var(--accent-soft);
+    border-radius: 6px; text-align: center; padding: 1px 0; white-space: nowrap;
+  }
+  .notes p { margin: 0; }
+  .notes p + p { margin-top: 0.4em; }
+
+  /* ---------- callouts, tables ---------- */
+  .callout {
+    border: 1px solid var(--line); border-left: 3px solid var(--accent); background: var(--surface);
+    border-radius: 0 var(--radius) var(--radius) 0; padding: 14px 18px; margin-top: 18px;
+  }
+  .callout.warn { border-left-color: var(--warn); background: var(--warn-soft); }
+  .callout .tag { font: 600 11px/1 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent-ink); display: block; margin-bottom: 6px; }
+  .callout.warn .tag { color: var(--warn); }
+  .callout p { margin: 0; max-width: none; }
+  .callout p + p { margin-top: 0.5em; }
+
+  .table-wrap { overflow-x: auto; margin-top: 18px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+  th, td { text-align: left; vertical-align: top; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  tr:last-child td { border-bottom: none; }
+  th { font: 600 12px/1.3 var(--font-mono); letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); background: transparent; }
+  td:first-child { font-weight: 500; }
+  .yes { color: var(--good); font-weight: 600; }
+  .no { color: var(--bad); font-weight: 600; }
+
+  /* ---------- three ideas ---------- */
+  .ideas { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-top: 20px; }
+  .idea { padding: 16px 18px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+  .idea h3 { font-size: 1.05rem; margin-bottom: 6px; }
+  .idea p { margin: 0; font-size: 14.5px; color: var(--ink-2); }
+  .layers { display: grid; gap: 3px; margin-top: 12px; font: 12px/1.3 var(--font-mono); }
+  .layers span { padding: 5px 8px; border-radius: 4px; background: var(--accent-soft); color: var(--accent-ink); }
+  .layers span.dirty { background: var(--warn-soft); color: var(--warn); }
+
+  /* ---------- size bars ---------- */
+  .sizes { display: grid; gap: 10px; margin-top: 18px; }
+  .size { display: grid; grid-template-columns: 11em minmax(0, 1fr) 4.5em; gap: 12px; align-items: center; font-size: 14px; }
+  .size .bar { height: 12px; border-radius: 0 4px 4px 0; background: var(--muted); opacity: 0.45; }
+  .size .bar.now { background: var(--accent); opacity: 1; }
+  .size .val { font: 600 13px/1 var(--font-mono); text-align: right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 520px) { .size { grid-template-columns: 8em minmax(0, 1fr) 4em; } }
+
+  /* ---------- termination timeline ---------- */
+  .timeline { margin-top: 20px; display: grid; gap: 0; border-left: 2px solid var(--line); padding-left: 0; list-style: none; }
+  .timeline li { position: relative; padding: 0 0 18px 26px; max-width: none; }
+  .timeline li::before {
+    content: ""; position: absolute; left: -7px; top: 6px; width: 12px; height: 12px; border-radius: 50%;
+    background: var(--surface); border: 2px solid var(--accent);
+  }
+  .timeline li.kill::before { border-color: var(--bad); }
+  .timeline .when { font: 600 13px/1.4 var(--font-mono); color: var(--accent-ink); }
+  .timeline li.kill .when { color: var(--bad); }
+  .timeline p { margin: 2px 0 0; }
+
+  /* ---------- pipeline ---------- */
+  .pipeline { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; margin-top: 18px; }
+  .stage { flex: 1 1 130px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+  .stage b { display: block; font: 600 13.5px/1.3 var(--font-body); }
+  .stage span { display: block; margin-top: 4px; font: 12px/1.4 var(--font-mono); color: var(--warn); }
+  .arrow { align-self: center; color: var(--muted); font: 16px/1 var(--font-mono); }
+  @media (max-width: 640px) { .arrow { transform: rotate(90deg); flex-basis: 100%; text-align: center; } }
+
+  /* ---------- worked example ---------- */
+  .steps { display: grid; gap: 12px; margin-top: 20px; }
+  .step { display: grid; grid-template-columns: 7.2em minmax(0, 1fr); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
+  .step .badge { display: grid; place-content: center; text-align: center; gap: 2px; background: var(--accent-soft); color: var(--accent-ink); padding: 12px 6px; }
+  .step .badge strong { font: 800 22px/1 var(--font-display); }
+  .step .badge small { font: 12px/1.3 var(--font-mono); }
+  .step.down .badge { background: var(--warn-soft); color: var(--warn); }
+  .step .math { padding: 12px 16px; min-width: 0; }
+  .step .math h3 { font-size: 1rem; }
+  .step .math ol { margin: 6px 0 0; padding-left: 1.2em; font-size: 14.5px; }
+  .step .math li { max-width: none; }
+  .step .math li code { white-space: nowrap; }
+  @media (max-width: 520px) { .step { grid-template-columns: minmax(0, 1fr); } .step .badge { grid-auto-flow: column; gap: 10px; place-content: center start; padding: 10px 16px; } }
+
+  /* ---------- calculator ---------- */
+  .calc { margin-top: 22px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); overflow: hidden; }
+  .calc-head { padding: 14px 18px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: baseline; }
+  .calc-head p { margin: 0; color: var(--ink-2); font-size: 14px; }
+  .calc-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  @media (max-width: 640px) { .calc-grid { grid-template-columns: minmax(0, 1fr); } }
+  .calc-inputs { padding: 16px 18px; display: grid; gap: 16px; border-right: 1px solid var(--line); }
+  @media (max-width: 640px) { .calc-inputs { border-right: none; border-bottom: 1px solid var(--line); } }
+  .field { display: grid; gap: 6px; }
+  .field label { display: flex; justify-content: space-between; font-size: 14px; font-weight: 500; }
+  .field output { font: 600 14px/1 var(--font-mono); color: var(--accent-ink); font-variant-numeric: tabular-nums; }
+  input[type="range"] { width: 100%; accent-color: var(--accent); }
+  .presets { display: flex; flex-wrap: wrap; gap: 6px; }
+  .presets button {
+    font: 500 12.5px/1 var(--font-body); padding: 7px 10px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--bg); color: var(--ink-2);
+  }
+  .presets button:hover { border-color: var(--accent); color: var(--accent-ink); }
+  .calc-out { padding: 16px 18px; display: grid; gap: 12px; align-content: start; }
+  .result { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .result strong { font: 800 2.4rem/1 var(--font-display); font-variant-numeric: tabular-nums; }
+  .result span { color: var(--ink-2); font-size: 14px; }
+  .pods { display: flex; flex-wrap: wrap; gap: 5px; min-height: 22px; }
+  .pod { width: 22px; height: 22px; border-radius: 5px; border: 2px solid var(--accent); background: var(--accent-soft); }
+  .pod.new { background: var(--accent); }
+  .pod.gone { border-style: dashed; border-color: var(--muted); background: transparent; }
+  .trace { margin: 0; padding-left: 1.2em; font-size: 14px; color: var(--ink-2); display: grid; gap: 4px; }
+  .trace li { max-width: none; }
+  .trace code { white-space: nowrap; }
+
+  /* ---------- side by side mapping ---------- */
+  .map { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 10px; align-items: center; margin-top: 18px; }
+  .map .box { padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); font: 13px/1.5 var(--font-mono); }
+  .map .box b { display: block; font: 600 12px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+  .map .eq { font: 600 18px/1 var(--font-mono); color: var(--accent-ink); }
+  @media (max-width: 560px) { .map { grid-template-columns: minmax(0, 1fr); } .map .eq { text-align: center; transform: rotate(90deg); } }
+
+  /* ---------- experiments ---------- */
+  .experiments { counter-reset: exp; list-style: none; padding: 0; margin: 18px 0 0; display: grid; gap: 10px; }
+  .experiments li {
+    counter-increment: exp; display: grid; grid-template-columns: 2.2em minmax(0, 1fr); gap: 12px;
+    padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); max-width: none;
+  }
+  .experiments li::before { content: counter(exp); font: 800 1.3rem/1 var(--font-display); color: var(--accent-ink); }
+  .experiments b { display: block; }
+  .experiments p { margin: 2px 0 0; color: var(--ink-2); font-size: 14.5px; }
+
+  footer { margin-top: 80px; padding-top: 22px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+  body { margin: 0; }
+</style>
+</head>
+<body>
+<div class="shell">
+  <nav class="rail" aria-label="Contents">
+    <p class="label">Contents</p>
+    <ol>
+      <li class="group">Docker</li>
+      <li><a href="#how-docker-reads">How Docker reads a file</a></li>
+      <li><a href="#backend-dockerfile">Backend Dockerfile</a></li>
+      <li><a href="#frontend-dockerfile">Frontend Dockerfile</a></li>
+      <li><a href="#dockerignore">.dockerignore</a></li>
+      <li class="group">Kubernetes</li>
+      <li><a href="#anatomy">Manifest anatomy</a></li>
+      <li><a href="#deployment">The Deployment</a></li>
+      <li><a href="#resources">Requests &amp; limits</a></li>
+      <li><a href="#probes">Probes</a></li>
+      <li><a href="#termination">Graceful scale-down</a></li>
+      <li><a href="#service">The Service</a></li>
+      <li class="group">Autoscaling</li>
+      <li><a href="#hpa">The HPA</a></li>
+      <li><a href="#formula">Formula &amp; behavior</a></li>
+      <li><a href="#worked">Your run, step by step</a></li>
+      <li><a href="#calculator">Try the math</a></li>
+      <li><a href="#lag">Why it lags</a></li>
+      <li><a href="#mongo">What not to autoscale</a></li>
+      <li class="group">Practice</li>
+      <li><a href="#commands">Commands</a></li>
+      <li><a href="#experiments">Experiments</a></li>
+    </ol>
+  </nav>
+
+  <article>
+    <header class="hero">
+      <p class="eyebrow">node-docker-kube · field guide</p>
+      <h1>Docker &amp; Kubernetes, line by line</h1>
+      <p class="lede">
+        A walkthrough of every Dockerfile and Kubernetes config in this project: what each line does, why it's there,
+        and how it showed up in a real load test that scaled the backend from 1 to 5 pods and back.
+      </p>
+      <div class="hero-meta">
+        <span>Run: <strong>122,960 requests</strong></span>
+        <span>Errors: <strong>0</strong></span>
+        <span>Backend: <strong>1 → 3 → 5 → 2 → 1 pods</strong></span>
+      </div>
+      <nav class="files" aria-label="Files covered">
+        <a class="file" href="#backend-dockerfile"><code>backend/Dockerfile</code><span>Multi-stage, 28 MB image</span></a>
+        <a class="file" href="#frontend-dockerfile"><code>frontend/Dockerfile</code><span>Static build on nginx, 6 MB</span></a>
+        <a class="file" href="#deployment"><code>k8s/20-backend.yaml</code><span>Deployment + Service</span></a>
+        <a class="file" href="#hpa"><code>k8s/30-backend-hpa.yaml</code><span>The autoscaler</span></a>
+        <a class="file" href="#mongo"><code>k8s/10-mongo.yaml</code><span>Database, volume, tuning</span></a>
+      </nav>
+    </header>
+
+    <!-- ======================================================= PART 1 -->
+    <div class="part"><span class="num">PART 1</span><h2>Dockerfiles</h2></div>
+
+    <section id="how-docker-reads" class="prose">
+      <p class="eyebrow">Mental model</p>
+      <h2>How Docker reads a Dockerfile</h2>
+      <p>Three ideas explain almost every decision in the two Dockerfiles.</p>
+      <div class="ideas">
+        <div class="idea">
+          <h3>Instructions become layers</h3>
+          <p><code>FROM</code>, <code>RUN</code>, <code>COPY</code> run top to bottom. Each one that changes files stacks a read-only layer; the image is all layers combined.</p>
+        </div>
+        <div class="idea">
+          <h3>Layers are cached</h3>
+          <p>A rebuild reuses a layer if its instruction and inputs are unchanged. Once one layer changes, every layer below it rebuilds.</p>
+          <div class="layers" aria-label="Example: editing server.js only rebuilds the last layer">
+            <span>FROM node:22-alpine · cached</span>
+            <span>COPY package*.json · cached</span>
+            <span>RUN npm ci · cached</span>
+            <span class="dirty">COPY server.js · rebuilt</span>
+          </div>
+        </div>
+        <div class="idea">
+          <h3>The build context</h3>
+          <p><code>docker build ./backend</code> sends that folder to the builder, minus what <code>.dockerignore</code> excludes. <code>COPY</code> can only see files in the context.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="backend-dockerfile" class="prose">
+      <p class="eyebrow">backend/Dockerfile</p>
+      <h2>The backend: a two-stage build</h2>
+      <p>
+        This file has two <code>FROM</code> lines, so it's a <strong>multi-stage build</strong>. Only the last stage
+        becomes the image. The first stage exists to produce <code>node_modules</code> and is then thrown away.
+      </p>
+      <div class="exhibit">
+        <div class="exhibit-head"><b>backend/Dockerfile</b><button class="copy" type="button">Copy</button></div>
+        <pre><code class="hl-docker" data-hl="4-5,13">
+# Install dependencies with npm in a throwaway stage...
+FROM node:22-alpine AS deps
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+# ...then run on plain Alpine with its Node.js package (no npm, yarn or
+# corepack), which is much smaller than the official node image.
+FROM alpine:3.20
+RUN apk add --no-cache nodejs &amp;&amp; addgroup -S app &amp;&amp; adduser -S app -G app
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=deps /app/node_modules ./node_modules
+COPY package.json server.js ./
+USER app
+EXPOSE 5000
+CMD ["node", "server.js"]</code></pre>
+      </div>
+      <ul class="notes">
+        <li><span class="at">2</span><div><p><code>FROM</code> picks the base image: Node 22 on Alpine Linux. <code>AS deps</code> names the stage so line 13 can copy from it.</p></div></li>
+        <li><span class="at">3</span><div><p><code>WORKDIR</code> sets the current directory for later instructions and creates it if needed. It's a <code>mkdir -p /app &amp;&amp; cd /app</code> that persists.</p></div></li>
+        <li><span class="at">4–5</span><div>
+          <p><strong>The key caching trick for Node images.</strong> Copy only the manifest, install, and copy the code later. Editing <code>server.js</code> leaves the manifest unchanged, so the slow <code>npm ci</code> layer comes from cache and rebuilds take seconds. If you ran <code>COPY . .</code> first, every code edit would reinstall all dependencies.</p>
+          <p><code>npm ci</code> installs the exact versions in <code>package-lock.json</code>, fails if the lockfile and <code>package.json</code> disagree, and starts from a clean <code>node_modules</code>. <code>--omit=dev</code> skips <code>devDependencies</code>.</p>
+        </div></li>
+        <li><span class="at">9</span><div><p>Stage 2 starts again from bare Alpine (about 7 MB). Nothing from stage 1 carries over unless it's copied. <code>node:22-alpine</code> also ships npm, yarn, corepack and headers that a running server doesn't need.</p></div></li>
+        <li><span class="at">10</span><div><p><code>apk</code> is Alpine's package manager; <code>--no-cache</code> avoids keeping its index in the layer. <code>addgroup -S</code> / <code>adduser -S</code> create a system user for line 15. The steps are chained with <code>&amp;&amp;</code> into one <code>RUN</code>, so they make one layer. A file deleted in a later layer still takes space in the earlier one.</p></div></li>
+        <li><span class="at">12</span><div><p><code>ENV</code> sets a variable baked into the image and every container from it. <code>NODE_ENV=production</code> switches Express and other libraries out of debug mode.</p></div></li>
+        <li><span class="at">13</span><div><p><code>COPY --from=deps</code> reaches into the earlier stage and takes only its output. That's the payoff: the dependencies arrive without the tools that installed them.</p></div></li>
+        <li><span class="at">14</span><div><p>The app code comes last because it changes most often.</p></div></li>
+        <li><span class="at">15</span><div><p><code>USER app</code> makes the container run without root. Someone who exploits the app doesn't get root inside the container.</p></div></li>
+        <li><span class="at">16</span><div><p><code>EXPOSE</code> is documentation only. It doesn't open or publish anything. Publishing happens through <code>docker run -p</code>, Compose <code>ports:</code>, or a Kubernetes Service.</p></div></li>
+        <li><span class="at">17</span><div><p><code>CMD</code> is the default start command. It uses the <strong>exec form</strong> (a JSON array). The next table shows why that matters.</p></div></li>
+      </ul>
+
+      <h3 class="sub">Exec form vs. shell form</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Form</th><th>Example</th><th>What runs as PID 1</th><th><code>SIGTERM</code> reaches Node?</th></tr></thead>
+          <tbody>
+            <tr><td>Exec</td><td><code>CMD ["node","server.js"]</code></td><td><code>node</code> itself</td><td class="yes">Yes</td></tr>
+            <tr><td>Shell</td><td><code>CMD node server.js</code></td><td><code>/bin/sh -c "…"</code></td><td class="no">Usually not; <code>sh</code> doesn't forward it</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        When Kubernetes stops a pod it sends <code>SIGTERM</code>. <code>server.js</code> handles it: it stops accepting
+        connections, finishes in-flight requests and disconnects from MongoDB. That only works because the exec form
+        delivers the signal straight to Node.
+      </p>
+
+      <h3 class="sub">What the second stage saved</h3>
+      <div class="sizes" role="img" aria-label="Image sizes before and after: backend 259 MB to 28 MB, frontend 76 MB to 6 MB">
+        <div class="size"><span>backend, <code>node:22-alpine</code></span><div class="bar" style="width:100%"></div><span class="val">259 MB</span></div>
+        <div class="size"><span>backend, Alpine + nodejs</span><div class="bar now" style="width:10.8%"></div><span class="val">28 MB</span></div>
+        <div class="size"><span>frontend, <code>nginx:alpine</code></span><div class="bar" style="width:29.3%"></div><span class="val">76 MB</span></div>
+        <div class="size"><span>frontend, <code>alpine-slim</code></span><div class="bar now" style="width:2.3%"></div><span class="val">6 MB</span></div>
+      </div>
+    </section>
+
+    <section id="frontend-dockerfile" class="prose">
+      <p class="eyebrow">frontend/Dockerfile</p>
+      <h2>The frontend: build with Node, serve with nginx</h2>
+      <p>
+        Once built, a React app is plain HTML, JS and CSS. Node is only needed to build it, so the final image is nginx
+        plus about 150 KB of files.
+      </p>
+      <div class="exhibit">
+        <div class="exhibit-head"><b>frontend/Dockerfile</b><button class="copy" type="button">Copy</button></div>
+        <pre><code class="hl-docker" data-hl="11">
+FROM node:22-alpine AS build
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+# alpine-slim is the smallest official nginx image (~12 MB).
+FROM nginx:1.27-alpine-slim
+COPY nginx.conf /etc/nginx/nginx.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+EXPOSE 80</code></pre>
+      </div>
+      <ul class="notes">
+        <li><span class="at">3–4</span><div><p>Same cache-friendly order as the backend. Here the full install is needed, because Vite, the build tool, is a devDependency.</p></div></li>
+        <li><span class="at">5</span><div><p><code>COPY . .</code> copies the whole context. Because <code>.dockerignore</code> lists <code>node_modules</code>, your Mac's macOS-built modules never overwrite the Linux ones from line 4.</p></div></li>
+        <li><span class="at">6</span><div><p>Vite writes the optimised static site to <code>/app/dist</code>.</p></div></li>
+        <li><span class="at">10</span><div><p>This replaces nginx's main config. Owning that file is what allows <code>worker_processes 2</code>; the default <code>auto</code> starts one worker per host CPU, which meant 18 on this Mac.</p></div></li>
+        <li><span class="at">11</span><div><p>Only the built files cross into the final image.</p></div></li>
+        <li><span class="at">—</span><div><p>There's no <code>CMD</code>. It's <strong>inherited from the base image</strong>, which already runs <code>nginx -g 'daemon off;'</code>. Anything you don't override comes from the parent image.</p></div></li>
+      </ul>
+    </section>
+
+    <section id="dockerignore" class="prose">
+      <p class="eyebrow">.dockerignore</p>
+      <h2>Keep the build context small</h2>
+      <div class="exhibit">
+        <div class="exhibit-head"><b>backend/.dockerignore</b></div>
+        <pre><code class="hl-plain">
+node_modules
+npm-debug.log</code></pre>
+      </div>
+      <p>
+        It works like <code>.gitignore</code> for the build context. Builds are faster because 40 MB of
+        <code>node_modules</code> is never sent to the builder. They're also correct, because no wrong-platform
+        binaries get copied in.
+      </p>
+    </section>
+
+    <!-- ======================================================= PART 2 -->
+    <div class="part"><span class="num">PART 2</span><h2>Kubernetes</h2></div>
+
+    <section id="anatomy" class="prose">
+      <p class="eyebrow">Every manifest</p>
+      <h2>The same four parts, every time</h2>
+      <div class="exhibit">
+        <div class="exhibit-head"><b>shape of any manifest</b></div>
+        <pre><code class="hl-yaml">
+apiVersion: apps/v1   # which API group/version defines this kind
+kind: Deployment      # what object this is
+metadata:             # identity: name, namespace, labels
+spec:                 # the desired state you want to exist</code></pre>
+      </div>
+      <p>
+        You declare the desired state. Controllers in the cluster continuously work to make reality match it.
+        Autoscaling is one of those controllers changing a number in that desired state for you.
+      </p>
+    </section>
+
+    <section id="deployment" class="prose">
+      <p class="eyebrow">k8s/20-backend.yaml</p>
+      <h2>The backend Deployment</h2>
+      <div class="exhibit">
+        <div class="exhibit-head"><b>k8s/20-backend.yaml</b> <span>Deployment</span><button class="copy" type="button">Copy</button></div>
+        <pre><code class="hl-yaml" data-hl="10-14,38-40">
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: crud-app
+  labels: { app: backend }
+spec:
+  # No `replicas` field: the HorizontalPodAutoscaler owns the replica count,
+  # so re-applying this manifest won't reset a scaled-out deployment.
+  selector:
+    matchLabels: { app: backend }
+  template:
+    metadata:
+      labels: { app: backend }
+    spec:
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: backend
+          image: crud-backend:latest
+          imagePullPolicy: IfNotPresent # image is loaded into minikube by deploy.sh
+          ports:
+            - containerPort: 5000
+          env:
+            - name: PORT
+              value: "5000"
+            - name: MONGO_URI
+              value: mongodb://mongo:27017/crud
+            - name: MAX_ITEMS # cap on stored items, keeps the DB to ~1 MB
+              value: "500"
+            - name: MONGO_POOL_SIZE # x 5 pods = at most 15 DB connections
+              value: "3"
+            # Keep the V8 heap small so the pod fits in its 50Mi limit.
+            - name: NODE_OPTIONS
+              value: --max-old-space-size=24 --max-semi-space-size=2
+          # The HPA computes utilization as a percentage of the CPU *request*,
+          # so the request must be set. A small request keeps scaling easy to
+          # trigger on a laptop. Memory and scratch disk are capped at 50Mi.
+          resources:
+            requests: { cpu: 100m, memory: 40Mi, ephemeral-storage: 5Mi }
+            limits: { cpu: 500m, memory: 50Mi, ephemeral-storage: 10Mi }
+          readinessProbe:
+            httpGet: { path: /ready, port: 5000 }
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: 5000 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          lifecycle:
+            # Give kube-proxy time to stop routing to this pod before it exits,
+            # so scale-down doesn't cause failed requests.
+            preStop:
+              exec:
+                command: ["sleep", "5"]</code></pre>
+      </div>
+      <ul class="notes">
+        <li><span class="at">10–14</span><div>
+          <p><strong>Labels are the glue of Kubernetes.</strong> The <code>template</code> is the pod blueprint every replica is stamped from. The <code>selector</code> must match the template's labels. That's how the Deployment counts its pods, and the Service finds them through the same label. Nothing refers to pods by name.</p>
+        </div></li>
+        <li><span class="at">8–9</span><div>
+          <p><strong>No <code>replicas</code> field, on purpose.</strong> If the HPA has scaled to 5 and you <code>kubectl apply</code> a manifest that says <code>replicas: 1</code>, your apply resets it to 1 and the two controllers fight. Leaving it out gives the HPA sole ownership. The frontend sets <code>replicas: 1</code> because it isn't autoscaled.</p>
+        </div></li>
+        <li><span class="at">20</span><div><p><code>IfNotPresent</code> uses the image already on the node. The image is built inside minikube and isn't in any registry, so <code>Always</code> would fail with <code>ErrImagePull</code>. With a <code>:latest</code> tag Kubernetes defaults to <code>Always</code>, so this line is required.</p></div></li>
+        <li><span class="at">27</span><div><p><code>mongo</code> is the name of MongoDB's Service. Cluster DNS resolves it to a stable IP, so pods never need to know each other's addresses.</p></div></li>
+        <li><span class="at">34</span><div><p>Caps Node's heap at 24 MB so garbage collection runs long before the container reaches its 50Mi limit.</p></div></li>
+      </ul>
+    </section>
+
+    <section id="resources" class="prose">
+      <p class="eyebrow">Lines 38–40</p>
+      <h2>Requests and limits: the block that drives scaling</h2>
+      <p><code>100m</code> means 100 millicores, a tenth of one CPU core. <code>Mi</code> means mebibytes.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th></th><th>requests</th><th>limits</th></tr></thead>
+          <tbody>
+            <tr><td>Meaning</td><td>“Reserve at least this for me”</td><td>“Never let me use more than this”</td></tr>
+            <tr><td>Used by</td><td>The scheduler, to pick a node with that much free capacity</td><td>The kernel, at runtime</td></tr>
+            <tr><td>CPU over it</td><td>—</td><td><strong>Throttled.</strong> The pod slows down but keeps running.</td></tr>
+            <tr><td>Memory over it</td><td>—</td><td><strong>OOMKilled.</strong> The container is killed (exit code 137) and restarted.</td></tr>
+            <tr><td>HPA relevance</td><td><strong>CPU utilisation = usage ÷ request</strong></td><td>Sets the ceiling: 500m ÷ 100m = at most 500%</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout">
+        <span class="tag">Seen in the run</span>
+        <p><strong>CPU.</strong> The log printed <code>cpu 430%/50%</code>: each pod used about 430m against its 100m request. The 500m limit is what stopped it going above 500%.</p>
+        <p><strong>Memory.</strong> MongoDB at a 96Mi limit was OOMKilled under peak load, which is why its limit is now 128Mi. Memory can't be slowed down like CPU, so going over the limit means the process is killed.</p>
+      </div>
+      <div class="callout warn">
+        <span class="tag">Why the request matters for autoscaling</span>
+        <p>The HPA target of “50%” means 50% <em>of the request</em>. Without a CPU request, the HPA can't compute utilisation and shows <code>&lt;unknown&gt;</code>. A small request makes scaling easy to trigger on a laptop. In production, set the request to the pod's real typical usage.</p>
+      </div>
+    </section>
+
+    <section id="probes" class="prose">
+      <p class="eyebrow">Lines 41–48</p>
+      <h2>Probes: when a pod gets traffic, and when it gets restarted</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Probe</th><th>When it fails, Kubernetes…</th><th>This project checks</th></tr></thead>
+          <tbody>
+            <tr><td>readiness</td><td>Removes the pod from the Service, so it gets no traffic. It is <strong>not</strong> restarted.</td><td><code>/ready</code>: is MongoDB connected?</td></tr>
+            <tr><td>liveness</td><td><strong>Restarts</strong> the container.</td><td><code>/health</code>: is the process responding at all?</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Readiness is what makes scale-up safe. A new pod takes a few seconds to connect to MongoDB; without the probe
+        the Service would send it requests immediately and they'd fail. The load test shows this as
+        <code>1/3</code>: three pods exist, one is ready.
+      </p>
+      <div class="callout warn">
+        <span class="tag">Common mistake</span>
+        <p>Making liveness depend on the database. If MongoDB blips, Kubernetes restarts every backend pod and makes the outage worse. <code>/health</code> only checks the process.</p>
+      </div>
+    </section>
+
+    <section id="termination" class="prose">
+      <p class="eyebrow">Lines 16 and 49–54</p>
+      <h2>Graceful scale-down</h2>
+      <p>When the HPA removes a pod, this sequence runs. The 5-second <code>preStop</code> sleep covers a race in the middle of it.</p>
+      <ol class="timeline">
+        <li><span class="when">t = 0s</span><p>The pod is marked <em>Terminating</em>. In parallel, the endpoint controller removes it from the Service, and the <code>preStop</code> hook starts sleeping.</p></li>
+        <li><span class="when">t ≈ 0–2s</span><p>kube-proxy on every node updates its routing rules. This is <strong>asynchronous</strong>, so for a moment some nodes may still send new connections to the pod.</p></li>
+        <li><span class="when">t = 5s</span><p><code>preStop</code> ends and <code>SIGTERM</code> reaches Node. By now routing has caught up, so the server closes its port, finishes in-flight requests and exits.</p></li>
+        <li class="kill"><span class="when">t = 20s</span><p>If the process is still running, it gets <code>SIGKILL</code>. The 20s grace period includes the <code>preStop</code> time.</p></li>
+      </ol>
+      <p>This is part of why the run had zero errors while scaling down from 5 pods to 1.</p>
+    </section>
+
+    <section id="service" class="prose">
+      <p class="eyebrow">Bottom of k8s/20-backend.yaml</p>
+      <h2>The Service: a stable address for changing pods</h2>
+      <div class="exhibit">
+        <div class="exhibit-head"><b>k8s/20-backend.yaml</b> <span>Service</span></div>
+        <pre><code class="hl-yaml">
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: crud-app
+spec:
+  selector: { app: backend } # every READY pod with this label
+  ports:
+    - port: 5000             # port on the Service's virtual IP
+      targetPort: 5000       # port on the pods</code></pre>
+      </div>
+      <ul class="notes">
+        <li><span class="at">4</span><div><p>The Service gets a stable virtual IP and the DNS name <code>backend</code>, which nginx uses in <code>proxy_pass http://backend:5000</code>.</p></div></li>
+        <li><span class="at">7</span><div><p>As the HPA adds and removes pods, the Service's list of ready pods updates automatically. Nothing else needs reconfiguring. That's what makes horizontal scaling transparent to callers.</p></div></li>
+      </ul>
+      <div class="callout">
+        <span class="tag">Balancing is per connection</span>
+        <p>kube-proxy picks a pod when a TCP connection opens. A client that holds one keep-alive connection stays on one pod, even after new pods arrive. So <code>nginx.conf</code> deliberately opens a new upstream connection per request, which is how the run reached all 5 pods.</p>
+      </div>
+    </section>
+
+    <!-- ======================================================= PART 3 -->
+    <div class="part"><span class="num">PART 3</span><h2>Autoscaling</h2></div>
+
+    <section id="hpa" class="prose">
+      <p class="eyebrow">k8s/30-backend-hpa.yaml</p>
+      <h2>The HorizontalPodAutoscaler</h2>
+      <div class="exhibit">
+        <div class="exhibit-head"><b>k8s/30-backend-hpa.yaml</b><button class="copy" type="button">Copy</button></div>
+        <pre><code class="hl-yaml" data-hl="11-12,19,22,34">
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend
+  namespace: crud-app
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend
+  minReplicas: 1
+  maxReplicas: 5 # worst case 5 x 50Mi = 250Mi of backend memory
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50 # % of the 100m CPU request
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent # at most double every 15s...
+          value: 100
+          periodSeconds: 15
+        - type: Pods # ...or add up to 2 pods, whichever is more
+          value: 2
+          periodSeconds: 15
+      selectPolicy: Max
+    scaleDown:
+      # The Kubernetes default is 300s. 60s makes the demo quicker while
+      # still avoiding flapping when load briefly dips.
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 50
+          periodSeconds: 15</code></pre>
+      </div>
+      <ul class="notes">
+        <li><span class="at">7–10</span><div><p><code>scaleTargetRef</code> names the workload to scale: the backend Deployment.</p></div></li>
+        <li><span class="at">11–12</span><div><p>The replica count is always clamped to this range.</p></div></li>
+        <li><span class="at">14–19</span><div><p>A <code>Resource</code> metric is built-in CPU or memory, read from metrics-server. <code>Utilization</code> means a percentage of the request; the alternative <code>AverageValue</code> takes an absolute amount such as <code>200m</code>. The target is an average across all pods.</p></div></li>
+        <li><span class="at">20–38</span><div><p><code>behavior</code> limits how fast the count can change. The next section covers it.</p></div></li>
+      </ul>
+    </section>
+
+    <section id="formula" class="prose">
+      <p class="eyebrow">How the decision is made</p>
+      <h2>The formula, then the brakes</h2>
+      <p>Every 15 seconds the HPA controller computes:</p>
+      <div class="exhibit">
+        <pre class="plain"><code>desiredReplicas = ceil( currentReplicas × currentUtilization ÷ targetUtilization )</code></pre>
+      </div>
+      <p>If that ratio is within 10% of 1.0, it does nothing. This tolerance stops jitter. Then <code>behavior</code> applies two kinds of brake:</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Setting</th><th>Scale up</th><th>Scale down</th></tr></thead>
+          <tbody>
+            <tr><td>Stabilisation window</td><td><strong>0s</strong>: act on the newest recommendation now</td><td><strong>60s</strong>: use the <em>highest</em> recommendation from the last 60s</td></tr>
+            <tr><td>Policies</td><td>+100% <em>or</em> +2 pods per 15s</td><td>−50% per 15s</td></tr>
+            <tr><td><code>selectPolicy</code></td><td><code>Max</code>: whichever allows the bigger change</td><td><code>Max</code> (default)</td></tr>
+            <tr><td>Rounding of the policy limit</td><td>Up</td><td>Down</td></tr>
+            <tr><td>Kubernetes default if omitted</td><td>0s window; +100% or +4 pods per 15s</td><td><strong>300s</strong> window; −100% per 15s</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The asymmetry is deliberate. Scaling up slowly costs errors and latency; scaling down slowly only costs a little
+        spare capacity. The scale-down window stops <em>flapping</em>: a single quiet 15-second stretch can't remove pods
+        that will be needed again a moment later.
+      </p>
+    </section>
+
+    <section id="worked" class="prose">
+      <p class="eyebrow">From loadtest/results/run-20261018-184437.log</p>
+      <h2>Your run, step by step</h2>
+      <p>Every replica change in the run follows from the formula and the policies above.</p>
+      <div class="steps">
+        <div class="step">
+          <div class="badge"><strong>1 → 3</strong><small>~60s · 30 users</small></div>
+          <div class="math">
+            <h3>Scale up, limited by the policies</h3>
+            <ol>
+              <li>Formula: <code>ceil(1 × 326 ÷ 50) = ceil(6.52) = 7</code> pods wanted.</li>
+              <li>Percent policy: <code>ceil(1 × 2) = 2</code>. Pods policy: <code>1 + 2 = 3</code>.</li>
+              <li><code>selectPolicy: Max</code> allows 3, so the result is <code>min(7, 3) = 3</code>.</li>
+            </ol>
+          </div>
+        </div>
+        <div class="step">
+          <div class="badge"><strong>3 → 5</strong><small>~80s · 60 users</small></div>
+          <div class="math">
+            <h3>Scale up, limited by <code>maxReplicas</code></h3>
+            <ol>
+              <li>Formula: <code>ceil(3 × 326 ÷ 50) = 20</code> pods wanted.</li>
+              <li>Percent policy: <code>3 × 2 = 6</code>. Pods policy: <code>3 + 2 = 5</code>. Max allows 6.</li>
+              <li>Capped at <code>maxReplicas: 5</code>.</li>
+            </ol>
+          </div>
+        </div>
+        <div class="step down">
+          <div class="badge"><strong>5 → 2</strong><small>~410s · idle</small></div>
+          <div class="math">
+            <h3>Scale down, after the window</h3>
+            <ol>
+              <li>CPU fell to 3% around 360s, so the formula says 1 pod.</li>
+              <li>The 60s window has to see 1 as the highest recommendation before it acts: around 410s.</li>
+              <li>The 50% policy limits the step: <code>5 × 0.5 = 2.5</code>, rounded down to 2.</li>
+            </ol>
+          </div>
+        </div>
+        <div class="step down">
+          <div class="badge"><strong>2 → 1</strong><small>~420s · idle</small></div>
+          <div class="math">
+            <h3>Next 15-second period</h3>
+            <ol>
+              <li><code>2 × 0.5 = 1</code>, which equals <code>minReplicas</code>. The run ends.</li>
+            </ol>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="calculator" class="prose">
+      <p class="eyebrow">Interactive</p>
+      <h2>Try the math</h2>
+      <p>This applies the same formula and policies as the project's HPA for a single 15-second decision. The scale-down window is assumed to have already passed.</p>
+      <div class="calc">
+        <div class="calc-head">
+          <h3>One HPA decision</h3>
+          <p>target 50% · min 1 · max 5</p>
+        </div>
+        <div class="calc-grid">
+          <div class="calc-inputs">
+            <div class="field">
+              <label for="cur">Current replicas <output id="curOut" for="cur">1</output></label>
+              <input id="cur" type="range" min="1" max="5" step="1" value="1">
+            </div>
+            <div class="field">
+              <label for="cpu">Average CPU, % of request <output id="cpuOut" for="cpu">326%</output></label>
+              <input id="cpu" type="range" min="0" max="500" step="1" value="326">
+            </div>
+            <div class="field">
+              <span style="font-size:14px;font-weight:500">Moments from the run</span>
+              <div class="presets">
+                <button type="button" data-cur="1" data-cpu="326">60s: 1 pod, 326%</button>
+                <button type="button" data-cur="3" data-cpu="326">80s: 3 pods, 326%</button>
+                <button type="button" data-cur="5" data-cpu="3">410s: 5 pods, 3%</button>
+                <button type="button" data-cur="2" data-cpu="3">420s: 2 pods, 3%</button>
+                <button type="button" data-cur="2" data-cpu="52">Within tolerance</button>
+              </div>
+            </div>
+          </div>
+          <div class="calc-out" aria-live="polite">
+            <div class="result"><strong id="resN">3</strong><span id="resLabel">replicas next</span></div>
+            <div class="pods" id="pods" aria-hidden="true"></div>
+            <ol class="trace" id="trace"></ol>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="lag" class="prose">
+      <p class="eyebrow">Why the CPU column stayed stuck</p>
+      <h2>The HPA reacts to the recent past</h2>
+      <p>Several hops separate a busy pod from a new replica, and each adds delay:</p>
+      <div class="pipeline">
+        <div class="stage"><b>kubelet measures CPU</b><span>continuous</span></div>
+        <div class="arrow" aria-hidden="true">→</div>
+        <div class="stage"><b>metrics-server scrapes</b><span>every ~15–60s</span></div>
+        <div class="arrow" aria-hidden="true">→</div>
+        <div class="stage"><b>HPA evaluates</b><span>every 15s</span></div>
+        <div class="arrow" aria-hidden="true">→</div>
+        <div class="stage"><b>New pod starts</b><span>image + boot</span></div>
+        <div class="arrow" aria-hidden="true">→</div>
+        <div class="stage"><b>Readiness passes</b><span>DB connected</span></div>
+      </div>
+      <p>
+        That's why the log repeated <code>326%</code> over several rows, and why scale-down began about 50 seconds after
+        load stopped. It also explains the MongoDB OOM: the backend reached 5 pods, each opening database connections,
+        faster than anything else could adapt.
+      </p>
+      <div class="callout">
+        <span class="tag">Why CPU and not memory</span>
+        <p>Node.js holds on to memory after a burst, so a memory-based HPA would scale up and never scale down. CPU rises and falls with request load, which makes it the right signal for a stateless API.</p>
+      </div>
+    </section>
+
+    <section id="mongo" class="prose">
+      <p class="eyebrow">k8s/10-mongo.yaml</p>
+      <h2>What not to autoscale: the database</h2>
+      <p>MongoDB is stateful, so it runs as exactly one replica with its own volume.</p>
+      <div class="exhibit">
+        <div class="exhibit-head"><b>k8s/10-mongo.yaml</b> <span>excerpt</span><button class="copy" type="button">Copy</button></div>
+        <pre><code class="hl-yaml" data-hl="7,13-14,17-23">
+kind: PersistentVolumeClaim
+metadata:
+  name: mongo-data
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests: { storage: 50Mi }
+---
+kind: Deployment
+metadata:
+  name: mongo
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # a single RWO volume can't be mounted by two pods at once
+  template:
+    spec:
+      containers:
+        - name: mongo
+          image: mongo:7
+          args:
+            - --wiredTigerEngineConfigString=cache_size=16M,log=(file_max=2MB,prealloc=false)
+            - --setParameter=diagnosticDataCollectionEnabled=false
+            - --maxConns=100
+          resources:
+            requests: { cpu: 250m, memory: 128Mi }
+            limits: { memory: 128Mi }
+          readinessProbe:
+            tcpSocket: { port: 27017 }</code></pre>
+      </div>
+      <ul class="notes">
+        <li><span class="at">1–7</span><div><p>A <strong>PersistentVolumeClaim</strong> asks for storage that outlives pods. When the MongoDB pod was OOMKilled, its replacement remounted the same data, so the items survived. <code>ReadWriteOnce</code> means only one node can mount it read-write at a time.</p></div></li>
+        <li><span class="at">13–14</span><div><p>The default strategy, <code>RollingUpdate</code>, starts the new pod before stopping the old one. Two <code>mongod</code> processes would then fight over the same files. <code>Recreate</code> stops the old pod first, trading a few seconds of downtime for correctness. Scaling a database out properly needs replica sets and a StatefulSet; raising <code>replicas</code> would break it.</p></div></li>
+        <li><span class="at">20–23</span><div><p><code>args</code> overrides the image's <code>CMD</code>. The table below shows how the two sets of fields map.</p></div></li>
+        <li><span class="at">24–26</span><div><p>Memory request equals limit: guaranteed 128Mi, never more. There's no CPU limit, so the database can burst when the backend scales out instead of becoming the bottleneck. These settings put the pod in the <em>Burstable</em> QoS class.</p></div></li>
+        <li><span class="at">27–28</span><div><p>A TCP check only confirms the port accepts connections. A <code>mongosh</code> probe would start a Node.js process inside the container, and its memory would count against MongoDB's own limit.</p></div></li>
+      </ul>
+
+      <h3 class="sub">Where Docker meets Kubernetes</h3>
+      <div class="map">
+        <div class="box"><b>Pod spec</b>command:<br>args:</div>
+        <div class="eq" aria-hidden="true">⇄</div>
+        <div class="box"><b>Dockerfile</b>ENTRYPOINT<br>CMD</div>
+      </div>
+      <p>
+        <code>mongo:7</code> ships <code>ENTRYPOINT ["docker-entrypoint.sh"]</code> and <code>CMD ["mongod"]</code>. Setting
+        only <code>args</code> replaces <code>mongod</code> with the flags and keeps the entrypoint script, which sees
+        arguments starting with <code>--</code> and runs <code>mongod --wiredTiger…</code>.
+      </p>
+
+      <h3 class="sub">What the tuning bought</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>MongoDB</th><th>Untuned</th><th>Tuned</th></tr></thead>
+          <tbody>
+            <tr><td>Disk used</td><td>302 MB</td><td>~2 MB</td></tr>
+            <tr><td>Memory under load</td><td>172Mi</td><td>103Mi peak (128Mi limit)</td></tr>
+            <tr><td>Journal files</td><td>100 MB each, preallocated</td><td>2 MB, on demand</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ======================================================= PART 4 -->
+    <div class="part"><span class="num">PART 4</span><h2>Practice</h2></div>
+
+    <section id="commands" class="prose">
+      <p class="eyebrow">Look inside</p>
+      <h2>Commands to explore it yourself</h2>
+      <div class="exhibit">
+        <div class="exhibit-head"><b>terminal</b><button class="copy" type="button">Copy</button></div>
+        <pre><code class="hl-shell">
+# Docker
+docker history crud-backend:latest     # each layer and its size
+docker run --rm -it alpine:3.20 sh     # explore a base image from inside
+
+# Read the docs for any field, in the terminal
+kubectl explain deployment.spec.template.spec.containers.resources
+kubectl explain hpa.spec.behavior.scaleDown
+
+# Watch scaling decisions live
+kubectl -n crud-app get hpa backend -w            # CPU vs target, replica count
+kubectl -n crud-app describe hpa backend          # Events: every decision and why
+kubectl -n crud-app get pods -l app=backend -w    # pods appear, get ready, terminate
+kubectl -n crud-app top pods                      # live CPU and memory
+
+# Inspect a pod
+kubectl -n crud-app describe pod &lt;name&gt;   # Last State: OOMKilled, probe failures
+kubectl -n crud-app get endpointslices    # pod IPs the Service routes to now</code></pre>
+      </div>
+    </section>
+
+    <section id="experiments" class="prose">
+      <p class="eyebrow">Change one line, rerun the test</p>
+      <h2>Experiments</h2>
+      <p>After each edit, run <code>kubectl apply -f k8s/</code>, then <code>python loadtest/load_test.py --url &lt;url&gt; --open</code>.</p>
+      <ol class="experiments">
+        <li><div><b>Raise the target to 200%</b><p>Set <code>averageUtilization: 200</code>. The backend scales later and to fewer pods.</p></div></li>
+        <li><div><b>Remove the CPU request</b><p>The HPA shows <code>&lt;unknown&gt;</code> and never scales. This proves the request is the denominator.</p></div></li>
+        <li><div><b>Drop the scale-down window to 0</b><p>Set <code>stabilizationWindowSeconds: 0</code> under <code>scaleDown</code>. It scales down faster but may flap between load stages.</p></div></li>
+        <li><div><b>Starve the backend of memory</b><p>Set the memory limit to <code>30Mi</code>. <code>describe pod</code> shows <code>OOMKilled</code> and restarts.</p></div></li>
+        <li><div><b>Turn on upstream keep-alive</b><p>Add <code>keepalive 16;</code> to an <code>upstream</code> block in <code>nginx.conf</code>. “Pods hit” stays low after scale-up, which shows balancing is per connection.</p></div></li>
+      </ol>
+    </section>
+
+    <footer>
+      Part of <a href="https://github.com/jyothishankit/node-docker-kube-test">node-docker-kube</a>. All numbers come from the committed load-test run of 18 October 2026.
+    </footer>
+  </article>
+</div>
+
+<script>
+  // ---------- tiny syntax highlighter with line numbers ----------
+  function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function splitComment(line, lang) {
+    // A '#' starts a comment at line start or after whitespace (not inside "..." strings).
+    let inStr = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') inStr = !inStr;
+      if (c === '#' && !inStr && (i === 0 || /\s/.test(line[i - 1]))) return [line.slice(0, i), line.slice(i)];
+    }
+    return [line, ''];
+  }
+  function paintCode(code, lang) {
+    const [c0, c1] = splitComment(code, lang);
+    // Split out "strings" first, so later markup never sees quote characters.
+    const html = c0.split(/("[^"]*")/).map((part, idx) => {
+      if (idx % 2 === 1) return '<span class="t-s">' + esc(part) + '</span>';
+      let h = esc(part);
+      if (idx === 0) {
+        if (lang === 'docker') h = h.replace(/^(\s*)([A-Z]+)(?=\s)/, '$1<span class="t-k">$2</span>');
+        if (lang === 'yaml') h = h.replace(/^(\s*-?\s*)([A-Za-z][\w.-]*)(:)/, '$1<span class="t-k">$2</span>$3');
+        if (lang === 'shell') h = h.replace(/^(\s*)(docker|kubectl|python)\b/, '$1<span class="t-k">$2</span>');
+      }
+      if (lang === 'yaml') h = h.replace(/(\{\s*|,\s*)([A-Za-z][\w-]*)(:)/g, '$1<span class="t-k">$2</span>$3');
+      return h;
+    }).join('');
+    return html + (c1 ? '<span class="t-c">' + esc(c1) + '</span>' : '');
+  }
+  function parseRanges(spec) {
+    const set = new Set();
+    (spec || '').split(',').filter(Boolean).forEach((r) => {
+      const [a, b] = r.split('-').map(Number);
+      for (let i = a; i <= (b || a); i++) set.add(i);
+    });
+    return set;
+  }
+  document.querySelectorAll('pre code[class^="hl-"]').forEach((el) => {
+    const lang = el.className.replace('hl-', '');
+    const text = el.textContent.replace(/^\n/, '');
+    el.dataset.raw = text;
+    const hl = parseRanges(el.dataset.hl);
+    el.innerHTML = text.split('\n').map((line, i) =>
+      `<span class="ln${hl.has(i + 1) ? ' hl' : ''}" data-n="${i + 1}">${paintCode(line, lang) || ' '}</span>`
+    ).join('');
+  });
+
+  // ---------- copy buttons ----------
+  document.querySelectorAll('.copy').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const code = btn.closest('.exhibit').querySelector('code');
+      const text = code.dataset.raw || code.textContent;
+      const done = (label) => { btn.textContent = label; setTimeout(() => { btn.textContent = 'Copy'; }, 1400); };
+      try {
+        navigator.clipboard.writeText(text).then(() => done('Copied'), () => { selectText(code); done('Selected'); });
+      } catch (e) { selectText(code); done('Selected'); }
+    });
+  });
+  function selectText(node) {
+    const r = document.createRange(); r.selectNodeContents(node);
+    const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+  }
+
+  // ---------- HPA calculator (mirrors k8s/30-backend-hpa.yaml) ----------
+  const CFG = { target: 50, min: 1, max: 5, upPct: 100, upPods: 2, downPct: 50, tolerance: 0.1 };
+  const $ = (id) => document.getElementById(id);
+  function decide(cur, cpu) {
+    const steps = [];
+    const ratio = cpu / CFG.target;
+    const raw = Math.ceil(cur * ratio);
+    steps.push(`Formula: <code>ceil(${cur} × ${cpu} ÷ ${CFG.target}) = ${raw}</code>`);
+    if (Math.abs(ratio - 1) <= CFG.tolerance) {
+      steps.push(`Ratio ${ratio.toFixed(2)} is within ±10% of 1.0, so nothing changes.`);
+      return { next: cur, steps };
+    }
+    let next = raw;
+    if (raw > cur) {
+      const byPct = Math.ceil(cur * (1 + CFG.upPct / 100));
+      const byPods = cur + CFG.upPods;
+      const limit = Math.max(byPct, byPods);
+      steps.push(`Scale-up policies: +100% → ${byPct}, +2 pods → ${byPods}. Max allows <code>${limit}</code>.`);
+      next = Math.min(raw, limit);
+    } else if (raw < cur) {
+      const limit = Math.floor(cur * (1 - CFG.downPct / 100));
+      steps.push(`Scale-down policy: −50% of ${cur} = ${(cur * 0.5).toFixed(1)}, rounded down to <code>${limit}</code>.`);
+      next = Math.max(raw, limit);
+    } else {
+      steps.push('Already at the wanted count.');
+    }
+    const clamped = Math.min(CFG.max, Math.max(CFG.min, next));
+    if (clamped !== next) steps.push(`Clamped to the ${CFG.min}–${CFG.max} range: <code>${clamped}</code>.`);
+    return { next: clamped, steps };
+  }
+  function renderCalc() {
+    const cur = Number($('cur').value), cpu = Number($('cpu').value);
+    $('curOut').textContent = cur;
+    $('cpuOut').textContent = cpu + '%';
+    const { next, steps } = decide(cur, cpu);
+    $('resN').textContent = next;
+    $('resLabel').textContent = next > cur ? `replicas next (+${next - cur})` : next < cur ? `replicas next (−${cur - next})` : 'replicas next (no change)';
+    const pods = [];
+    for (let i = 0; i < Math.max(cur, next); i++) {
+      pods.push(`<span class="pod${i >= cur ? ' new' : ''}${i >= next ? ' gone' : ''}"></span>`);
+    }
+    $('pods').innerHTML = pods.join('');
+    $('trace').innerHTML = steps.map((s) => `<li>${s}</li>`).join('');
+  }
+  $('cur').addEventListener('input', renderCalc);
+  $('cpu').addEventListener('input', renderCalc);
+  document.querySelectorAll('.presets button').forEach((b) => b.addEventListener('click', () => {
+    $('cur').value = b.dataset.cur; $('cpu').value = b.dataset.cpu; renderCalc();
+  }));
+  renderCalc();
+
+  // ---------- contents highlight ----------
+  const links = [...document.querySelectorAll('.rail a')];
+  const byId = new Map(links.map((a) => [a.getAttribute('href').slice(1), a]));
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((e) => {
+        if (e.isIntersecting) {
+          links.forEach((a) => a.classList.remove('active'));
+          const a = byId.get(e.target.id); if (a) a.classList.add('active');
+        }
+      });
+    }, { rootMargin: '-20% 0px -70% 0px' });
+    byId.forEach((_, id) => { const s = document.getElementById(id); if (s) io.observe(s); });
+  }
+</script>
+</body>
+</html>
